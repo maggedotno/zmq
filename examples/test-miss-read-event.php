@@ -31,8 +31,11 @@ function pull_routine()
     $context = new React\ZMQ\Context($loop);
     $socket = $context->getSocket(ZMQ::SOCKET_PULL);
     $socket->bind('ipc://test.ipc');
-    $socket->on('message', function() {
-        echo "-";
+    $socket->on('message', function($msg) {
+        if (is_array($msg))
+            echo "M";
+        else
+            echo "S";
     });
 
     $loop->run();
@@ -47,8 +50,14 @@ function push_routine()
     while (true) {
         $msgs = rand(1, 300);
         for ($n = 0; $n < $msgs; $n++) {
-            echo "+";
-            $socket->send(json_encode('bogus-'.$n));
+            if (rand(0,100) >= 50) {
+                echo "s";
+                $socket->send('bogus-'.$n);
+            }
+            else {
+                echo "m";
+                $socket->sendmulti(array("bogus$n-1", "bogus$n-2", "bogus$n-3"));
+            }
         }
 
         usleep(rand(0, 1000000));
