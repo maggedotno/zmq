@@ -50,23 +50,34 @@ class Buffer extends EventEmitter
             return;
         }
 
-        foreach ($this->messages as $i => $message) {
+        // send while we have messages and the socket can receive messages
+        while ($this->hasMessages() && $this->socket->getSockOpt(\ZMQ::SOCKOPT_EVENTS) & \ZMQ::POLL_OUT) {
+
+            $message = array_pop($this->messages);
             try {
-                $message = !is_array($message) ? array($message) : $message;
-                $sent = (bool) $this->socket->sendmulti($message, \ZMQ::MODE_NOBLOCK);
-                if ($sent) {
-                    unset($this->messages[$i]);
-                    if (0 === count($this->messages)) {
-                        $this->loop->removeWriteStream($this->fd);
-                        $this->listening = false;
-                        $this->emit('end');
-                    }
-                }
-            } catch (\ZMQSocketException $e) {
+                if (is_array($message))
+                    $this->socket->sendmulti($message, \ZMQ::MODE_NOBLOCK);
+                else
+                    $this->socket->send($message, \ZMQ::MODE_NOBLOCK);
+            }
+            catch (\ZMQSocketException $e) {
                 $this->emit('error', array($e));
             }
         }
 
+        if (!$this->hasMessages())
+            $this->removeFromLoop();
+
         $this->emit('written');
+    }
+
+    public function hasMessages() {
+        return (count($this->messages) > 0);
+    }
+
+    private function removeFromLoop() {
+        $this->loop->removeWriteStream($this->fd);
+        $this->listening = false;
+        $this->emit('end');
     }
 }
