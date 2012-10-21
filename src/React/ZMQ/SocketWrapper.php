@@ -21,7 +21,6 @@ class SocketWrapper extends EventEmitter
         $this->fd = $this->socket->getSockOpt(\ZMQ::SOCKOPT_FD);
 
         $this->buffer = new Buffer($socket, $this->fd, $this->loop);
-        $this->buffer->on('written', array($this, 'handleData'));
     }
 
     public function attachReadListener()
@@ -31,23 +30,19 @@ class SocketWrapper extends EventEmitter
 
     public function handleData()
     {
-        $read = false;
+        // if socket has no messages, stop now
+        if (!($this->socket->getSockOpt(\ZMQ::SOCKOPT_EVENTS) & \ZMQ::POLL_IN))
+            return;
 
-        while ($this->socket->getSockOpt(\ZMQ::SOCKOPT_EVENTS) & \ZMQ::POLL_IN) {
-            $read = true;
+        // get messages
+        while ($message = $this->socket->recv(\ZMQ::MODE_NOBLOCK)) {
 
-            $messages = $this->socket->recvmulti(\ZMQ::MODE_NOBLOCK);
-            if (false !== $messages) {
-                if (count($messages) > 1) {
-                    $this->emit('message', array($messages));
-                } else {
-                    $this->emit('message', array($messages[0]));
-                }
-            }
-        }
+            // add any remaining parts for multipart messages
+            $message = array($message);
+            while ($this->socket->getSockOpt(\ZMQ::SOCKOPT_RCVMORE)
+                && $message[] = $this->socket->recv(\ZMQ::MODE_NOBLOCK));
 
-        if ($read && $this->socket->getSockOpt(\ZMQ::SOCKOPT_EVENTS) & \ZMQ::POLL_OUT) {
-            $this->buffer->handleWrite();
+            $this->emit('message', count($message) == 1 ? $message : array($message));
         }
     }
 
